@@ -1,0 +1,24 @@
+tables:
+- name: application
+  priority: 1
+  columns:
+  - name: application_id
+    pattern: "ABC#####"
+    parent: true
+  - name: modified_on
+    type: timestamp
+  - name: modified_by
+  - name: product_code
+    value: ["ABC1", "ABC2"]
+  - name: reg_id
+    type: int
+- name: "application_status"
+  columns:
+  - name: id
+    type: uuid
+  - name: application_id
+    foreign: "application:application_id"
+  - name: reason
+    type: sentence
+  - name: status
+    type: bool

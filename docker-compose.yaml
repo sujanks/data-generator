@@ -1,0 +1,30 @@
+services:
+  db:
+    build: ./db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: user
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    container_name: db
+    networks:
+      - local_network
+
+  data-gen-app:
+    build:
+      context: ./data-gen-app
+    container_name: "data-gen-app"
+    depends_on:
+      - db
+    command: ["./generate"]
+    environment:
+      RECORDS: 1
+      SINK: "pg"
+      PROFILE: application
+    networks:
+    - local_network
+  
+networks:
+  local_network:
+    driver: bridge
