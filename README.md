@@ -7,10 +7,9 @@ A flexible and powerful data generation tool built in Go that generates syntheti
 - 🚀 High-performance batch data generation
 - 📝 YAML-based manifest configuration
 - 🔄 Support for table dependencies and relationships
-- ✨ Rich data type support
+- ✨ Rich data type support including JSON
 - 🎯 Customizable data patterns and distributions
 - ✅ Data validation and constraints
-
 
 ## Quick Start
 
@@ -18,23 +17,27 @@ A flexible and powerful data generation tool built in Go that generates syntheti
 
 ```yaml
 tables:
-- name: application
+- name: users
   priority: 1
   columns:
-  - name: application_id
-    pattern: "ABC#####"
+  - name: id
+    pattern: "USER####"
     parent: true
     validation:
-      unique: true  
-  - name: modified_on
-    type: timestamp
-    format: "2025-03-07 12:00:00"
-    range:
-      min: "2025-03-07 12:00:00"
-      max: "2025-03-07 12:00:00"
-  - name: modified_by
+      unique: true
+  - name: name
     type: string
     value: ["John Doe", "Jane Doe"]
+  - name: metadata
+    type: json
+    json_config:
+      min_keys: 2
+      max_keys: 4
+      fields: ["age", "email", "preferences"]
+      types: ["int", "email", "string"]
+  - name: created_at
+    type: timestamp
+    format: "2006-01-02 15:04:05"
 ```
 
 2. Run the generator:
@@ -53,6 +56,7 @@ go run main.go -manifest manifest/application.yaml -count 1000
 - `uuid`: Unique identifiers
 - `sentence`: Random sentence generation
 - `pattern`: Custom pattern-based strings (e.g., "ABC#####")
+- `json`: Nested JSON objects with configurable fields
 
 ## Manifest Configuration
 
@@ -85,6 +89,34 @@ columns:
     format: "format_string" # Format specification
 ```
 
+### JSON Configuration
+
+```yaml
+columns:
+  - name: metadata
+    type: json
+    json_config:
+      min_keys: 2          # Minimum number of keys in JSON
+      max_keys: 5          # Maximum number of keys in JSON
+      fields:              # Predefined field names
+        - name
+        - age
+        - email
+      types:               # Corresponding field types
+        - string
+        - int
+        - email
+```
+
+Supported JSON field types:
+- `string`: Random words
+- `int`: Integer numbers (0-1000)
+- `float`: Floating point numbers (0-1000)
+- `bool`: Boolean values
+- `date`: Date strings
+- `email`: Email addresses
+- `url`: URLs
+
 ## Features
 
 ### Data Validation
@@ -107,6 +139,44 @@ columns:
 - Weighted random values
 - Custom value distributions
 - Range-based generation
+
+### JSON Generation
+- Configurable number of fields
+- Predefined or random field names
+- Multiple value types
+- Nested structure support
+
+## Example Use Cases
+
+1. **User Profile Generation**:
+```yaml
+- name: users
+  columns:
+    - name: id
+      pattern: "U####"
+      validation:
+        unique: true
+    - name: profile
+      type: json
+      json_config:
+        fields: ["age", "location", "interests"]
+        types: ["int", "string", "string"]
+```
+
+2. **Related Tables**:
+```yaml
+- name: orders
+  depends_on: users
+  columns:
+    - name: order_id
+      pattern: "ORD####"
+    - name: user_id
+      foreign: "users.id"
+    - name: metadata
+      type: json
+      json_config:
+        fields: ["items", "total", "shipping"]
+```
 
 ## Contributing
 

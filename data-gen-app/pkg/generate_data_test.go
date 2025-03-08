@@ -188,6 +188,33 @@ func TestGenerateColumnValue(t *testing.T) {
 				assert.True(t, v.Before(maxTime) || v.Equal(maxTime))
 			},
 		},
+		{
+			name: "Generate JSON",
+			column: Column{
+				Name: "metadata",
+				Type: "json",
+				JSONConfig: JSONConfig{
+					Fields: []string{"name", "age"},
+					Types:  []string{"string", "int"},
+				},
+			},
+			wantType: map[string]interface{}{},
+			validate: func(t *testing.T, value interface{}) {
+				jsonObj, ok := value.(map[string]interface{})
+				assert.True(t, ok)
+				assert.Contains(t, jsonObj, "name")
+				assert.Contains(t, jsonObj, "age")
+
+				name, ok := jsonObj["name"].(string)
+				assert.True(t, ok)
+				assert.NotEmpty(t, name)
+
+				age, ok := jsonObj["age"].(int)
+				assert.True(t, ok)
+				assert.GreaterOrEqual(t, age, 0)
+				assert.LessOrEqual(t, age, 1000)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -360,5 +387,71 @@ tables:
 		assert.True(t, ok)
 		assert.GreaterOrEqual(t, age, 20)
 		assert.LessOrEqual(t, age, 50)
+	}
+}
+
+func TestGenerateJSON(t *testing.T) {
+	tests := []struct {
+		name   string
+		config JSONConfig
+		verify func(t *testing.T, result interface{})
+	}{
+		{
+			name:   "Default JSON Generation",
+			config: JSONConfig{},
+			verify: func(t *testing.T, result interface{}) {
+				jsonObj, ok := result.(map[string]interface{})
+				assert.True(t, ok)
+				assert.GreaterOrEqual(t, len(jsonObj), 1)
+				assert.LessOrEqual(t, len(jsonObj), 5)
+			},
+		},
+		{
+			name: "Custom Keys Range",
+			config: JSONConfig{
+				MinKeys: 3,
+				MaxKeys: 4,
+			},
+			verify: func(t *testing.T, result interface{}) {
+				jsonObj, ok := result.(map[string]interface{})
+				assert.True(t, ok)
+				assert.GreaterOrEqual(t, len(jsonObj), 3)
+				assert.LessOrEqual(t, len(jsonObj), 4)
+			},
+		},
+		{
+			name: "Predefined Fields",
+			config: JSONConfig{
+				Fields: []string{"name", "age", "email"},
+				Types:  []string{"string", "int", "email"},
+			},
+			verify: func(t *testing.T, result interface{}) {
+				jsonObj, ok := result.(map[string]interface{})
+				assert.True(t, ok)
+
+				// Check name field
+				name, ok := jsonObj["name"].(string)
+				assert.True(t, ok)
+				assert.NotEmpty(t, name)
+
+				// Check age field
+				age, ok := jsonObj["age"].(int)
+				assert.True(t, ok)
+				assert.GreaterOrEqual(t, age, 0)
+				assert.LessOrEqual(t, age, 1000)
+
+				// Check email field
+				email, ok := jsonObj["email"].(string)
+				assert.True(t, ok)
+				assert.Contains(t, email, "@")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := generateJSON(tt.config)
+			tt.verify(t, result)
+		})
 	}
 }
