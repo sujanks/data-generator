@@ -1,2 +1,8 @@
+tmp/*
 .idea
 .DS_Store
+TODO.md
+*.out
+coverage.html
+go.sum
+vendor
