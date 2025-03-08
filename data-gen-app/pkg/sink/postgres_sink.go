@@ -12,6 +12,11 @@ type pgDataSink struct {
 	profile string
 }
 
+// InsertRecord implements DataSink.
+func (pgDataSink *pgDataSink) InsertRecord(tableName string, data map[string]interface{}) error {
+	panic("unimplemented")
+}
+
 func NewPgDataSink(p string) DataSink {
 	return &pgDataSink{
 		db:      *pgConnection(),
