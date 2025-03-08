@@ -184,4 +184,30 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Data Sinks
+
+### CSV Sink
+
+The CSV sink allows you to output generated data to CSV files. Each table will be written to a separate CSV file in the specified output directory.
+
+Example usage in your manifest:
+
+```yaml
+sink:
+  type: csv
+  config:
+    output_dir: "./output"
+```
+
+Features:
+- Automatic header generation based on column names
+- Support for all data types including JSON fields
+- Proper escaping and formatting of values
+- Multiple table support with separate files
+- Automatic output directory creation
+
+The CSV files will be named after the table names (e.g., `users.csv`, `orders.csv`). Each file will include a header row with column names followed by the data rows.
+
+JSON fields are formatted in a readable string format: `{key1:value1,key2:value2}`. 
