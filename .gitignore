@@ -6,3 +6,4 @@ TODO.md
 coverage.html
 go.sum
 vendor
+.vscode
