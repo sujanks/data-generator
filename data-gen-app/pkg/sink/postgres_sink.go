@@ -14,7 +14,11 @@ type pgDataSink struct {
 
 // InsertRecord implements DataSink.
 func (pgDataSink *pgDataSink) InsertRecord(tableName string, data map[string]interface{}) error {
-	panic("unimplemented")
+	_, err := pgDataSink.db.Model(&data).TableExpr(tableName).Insert()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func NewPgDataSink(p string) DataSink {
@@ -42,11 +46,4 @@ func pgConnection() *pg.DB {
 	}
 	log.Fatal("could not connect to postgres database")
 	return nil
-}
-
-func (pgDataSink *pgDataSink) InsertRcord(tableName string, roKeyValue map[string]interface{}) {
-	_, err := pgDataSink.db.Model(&roKeyValue).TableExpr(tableName).Insert()
-	if err != nil {
-		log.Fatalf("Failed to inert %v", err)
-	}
 }
