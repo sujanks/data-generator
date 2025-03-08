@@ -5,19 +5,44 @@ tables:
   - name: application_id
     pattern: "ABC#####"
     parent: true
+    validation:
+      unique: true  
   - name: modified_on
     type: timestamp
+    format: "2025-03-07 12:00:00"
+    range:
+      min: "2025-03-07 12:00:00"
+      max: "2025-03-07 12:00:00"
   - name: modified_by
+    type: string
+    value: ["John Doe", "Jane Doe"]
   - name: product_code
     value: ["ABC1", "ABC2"]
   - name: reg_id
     type: int
+    range:
+      min: 1
+      max: 1000
+  - name: metadata
+    type: json
+    json_config:
+      min_keys: 2
+      max_keys: 5
+      fields: ["name", "age", "email"]
+      types: ["string", "int", "email"]
+  name: salary
+  type: decimal
+  precision: 2
+  range:
+    min: 1000
+    max: 100000
 - name: "application_status"
+  depends_on: "application"
   columns:
   - name: id
     type: uuid
   - name: application_id
-    foreign: "application:application_id"
+    references: "application.application_id"
   - name: reason
     type: sentence
   - name: status

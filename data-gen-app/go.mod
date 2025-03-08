@@ -5,13 +5,15 @@ go 1.23.0
 require (
 	github.com/brianvoe/gofakeit/v7 v7.1.2
 	github.com/go-pg/pg/v10 v10.13.0
-	gopkg.in/inf.v0 v0.9.1
+	github.com/stretchr/testify v1.10.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-pg/zerochecker v0.2.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc // indirect
 	github.com/vmihailenco/bufpool v0.1.11 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.3.4 // indirect
