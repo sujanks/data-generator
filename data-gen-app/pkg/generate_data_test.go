@@ -194,8 +194,18 @@ func TestGenerateColumnValue(t *testing.T) {
 				Name: "metadata",
 				Type: "json",
 				JSONConfig: JSONConfig{
-					Fields: []string{"name", "age"},
-					Types:  []string{"string", "int"},
+					{
+						Name: "name",
+						Type: "string",
+					},
+					{
+						Name: "age",
+						Type: "int",
+						Range: Range{
+							Min: 0,
+							Max: 100,
+						},
+					},
 				},
 			},
 			wantType: map[string]interface{}{},
@@ -212,7 +222,7 @@ func TestGenerateColumnValue(t *testing.T) {
 				age, ok := jsonObj["age"].(int)
 				assert.True(t, ok)
 				assert.GreaterOrEqual(t, age, 0)
-				assert.LessOrEqual(t, age, 1000)
+				assert.LessOrEqual(t, age, 100)
 			},
 		},
 	}
@@ -407,23 +417,24 @@ func TestGenerateJSON(t *testing.T) {
 			},
 		},
 		{
-			name: "Custom Keys Range",
-			config: JSONConfig{
-				MinKeys: 3,
-				MaxKeys: 4,
-			},
-			verify: func(t *testing.T, result interface{}) {
-				jsonObj, ok := result.(map[string]interface{})
-				assert.True(t, ok)
-				assert.GreaterOrEqual(t, len(jsonObj), 3)
-				assert.LessOrEqual(t, len(jsonObj), 4)
-			},
-		},
-		{
 			name: "Predefined Fields",
 			config: JSONConfig{
-				Fields: []string{"name", "age", "email"},
-				Types:  []string{"string", "int", "email"},
+				{
+					Name: "name",
+					Type: "string",
+				},
+				{
+					Name: "age",
+					Type: "int",
+					Range: Range{
+						Min: 18,
+						Max: 65,
+					},
+				},
+				{
+					Name: "email",
+					Type: "email",
+				},
 			},
 			verify: func(t *testing.T, result interface{}) {
 				jsonObj, ok := result.(map[string]interface{})
@@ -437,8 +448,8 @@ func TestGenerateJSON(t *testing.T) {
 				// Check age field
 				age, ok := jsonObj["age"].(int)
 				assert.True(t, ok)
-				assert.GreaterOrEqual(t, age, 0)
-				assert.LessOrEqual(t, age, 1000)
+				assert.GreaterOrEqual(t, age, 18)
+				assert.LessOrEqual(t, age, 65)
 
 				// Check email field
 				email, ok := jsonObj["email"].(string)
