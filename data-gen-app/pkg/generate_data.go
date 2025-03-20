@@ -37,10 +37,11 @@ type Range struct {
 
 // JSONConfig defines the structure for JSON field generation
 type JSONConfig struct {
-	MinKeys int      `yaml:"min_keys,omitempty"`
-	MaxKeys int      `yaml:"max_keys,omitempty"`
-	Fields  []string `yaml:"fields,omitempty"` // Optional predefined fields
-	Types   []string `yaml:"types,omitempty"`  // Optional value types for fields
+	MinKeys int              `yaml:"min_keys,omitempty"`
+	MaxKeys int              `yaml:"max_keys,omitempty"`
+	Fields  []string         `yaml:"fields,omitempty"` // Optional predefined fields
+	Types   []string         `yaml:"types,omitempty"`  // Optional value types for fields
+	Ranges  map[string]Range `yaml:"ranges,omitempty"` // Field-specific ranges
 }
 
 type Column struct {
@@ -206,14 +207,14 @@ func generateJSON(config JSONConfig) interface{} {
 			} else {
 				valueType = getRandomValueType()
 			}
-			jsonObj[field] = generateValueByType(valueType)
+			jsonObj[field] = generateValueByType(valueType, config.Ranges[field])
 		}
 	} else {
 		// Generate random fields
 		for i := 0; i < numKeys; i++ {
 			field := gofakeit.Word()
 			valueType := getRandomValueType()
-			jsonObj[field] = generateValueByType(valueType)
+			jsonObj[field] = generateValueByType(valueType, Range{})
 		}
 	}
 
@@ -227,14 +228,36 @@ func getRandomValueType() string {
 }
 
 // generateValueByType generates a random value of specified type
-func generateValueByType(valueType string) interface{} {
+func generateValueByType(valueType string, rangeConfig Range) interface{} {
 	switch valueType {
 	case "string":
 		return gofakeit.Word()
 	case "int":
-		return gofakeit.IntRange(0, 1000)
+		min, max := 0, 1000
+		if rangeConfig.Min != nil {
+			if minVal, ok := rangeConfig.Min.(int); ok {
+				min = minVal
+			}
+		}
+		if rangeConfig.Max != nil {
+			if maxVal, ok := rangeConfig.Max.(int); ok {
+				max = maxVal
+			}
+		}
+		return gofakeit.IntRange(min, max)
 	case "float":
-		return gofakeit.Float64Range(0, 1000)
+		min, max := 0.0, 1000.0
+		if rangeConfig.Min != nil {
+			if minVal, ok := rangeConfig.Min.(float64); ok {
+				min = minVal
+			}
+		}
+		if rangeConfig.Max != nil {
+			if maxVal, ok := rangeConfig.Max.(float64); ok {
+				max = maxVal
+			}
+		}
+		return gofakeit.Float64Range(min, max)
 	case "bool":
 		return gofakeit.Bool()
 	case "date":
