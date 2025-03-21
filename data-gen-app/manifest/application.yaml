@@ -13,6 +13,9 @@ tables:
     range:
       min: "2025-03-07 12:00:00"
       max: "2025-03-07 12:00:00"
+  - name: submitted_date
+    type: timestamp
+    format: "2025-03-07 12:00:00"
   - name: modified_on
     type: timestamp
     format: "2025-03-07 12:00:00"
@@ -53,6 +56,11 @@ tables:
       min: 1000
       max: 100000
   rules:
+  # Ensure submitted_date is at least 2 hours after created_on
+  - when: "fields.submitted_date <= fields.created_on || addDuration(fields.created_on, '2h') > fields.submitted_date"
+    then:
+      submitted_date: "${addDuration(fields.created_on, '2h')}"
+  
   # Set modified_on to 1 hour after created_on
   - when: "true"
     then:

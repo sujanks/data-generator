@@ -108,6 +108,72 @@ columns:
         - email
 ```
 
+### Rules and Expressions
+
+The data generator now supports powerful rule-based data generation with expressions. Rules can be defined at both column and table levels.
+
+```yaml
+rules:
+  # Time-based rules
+  - when: "fields.submitted_date <= fields.created_on || addDuration(fields.created_on, '2h') > fields.submitted_date"
+    then:
+      submitted_date: "${addDuration(fields.created_on, '2h')}"
+
+  # Conditional value setting
+  - when: "fields.salary > 50000"
+    then:
+      priority: "HIGH"
+    otherwise:
+      priority: "${fields.salary > 25000 ? 'MEDIUM' : 'LOW'}"
+```
+
+#### Expression Functions
+
+Time Functions:
+- `addDuration(time, duration)`: Add duration to time (e.g., '1h', '30m', '2h')
+- `parseTime(layout, value)`: Parse time string using layout
+- `format(time, layout)`: Format time using layout
+- `now()`: Get current time
+
+Math Functions:
+- `min(a, b)`: Return minimum of two numbers
+- `max(a, b)`: Return maximum of two numbers
+
+String Functions:
+- `contains(str, substr)`: Check if string contains substring
+- `hasPrefix(str, prefix)`: Check if string starts with prefix
+- `hasSuffix(str, suffix)`: Check if string ends with suffix
+- `lower(str)`: Convert string to lowercase
+- `upper(str)`: Convert string to uppercase
+- `trim(str)`: Remove leading/trailing whitespace
+
+#### Example Rules
+
+1. **Time Constraints**:
+```yaml
+- when: "fields.submitted_date <= fields.created_on"
+  then:
+    submitted_date: "${addDuration(fields.created_on, '2h')}"
+```
+
+2. **Status-based Updates**:
+```yaml
+- when: 'fields.status == "COMPLETED"'
+  then:
+    completed_on: "${addDuration(fields.modified_on, '2h')}"
+```
+
+3. **Complex Conditions**:
+```yaml
+- when: 'fields.status == "IN_PROGRESS" && fields.priority == "HIGH"'
+  then:
+    completed_on: "${addDuration(fields.modified_on, '1h')}"
+    modified_by: "John Doe"
+  otherwise:
+    completed_on: "${addDuration(fields.modified_on, '2h')}"
+    modified_by: "Jane Doe"
+```
+
 Supported JSON field types:
 - `string`: Random words
 - `int`: Integer numbers (0-1000)

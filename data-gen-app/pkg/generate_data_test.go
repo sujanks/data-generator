@@ -995,3 +995,129 @@ tables:
 		}
 	}
 }
+
+func TestStringManipulationRules(t *testing.T) {
+	fields := map[string]interface{}{
+		"name": "John Doe",
+	}
+
+	tests := []struct {
+		name       string
+		expression string
+		fields     map[string]interface{}
+		want       bool
+	}{
+		{
+			name:       "Simple contains check",
+			expression: `contains(fields.name, "John")`,
+			fields:     fields,
+			want:       true,
+		},
+		{
+			name:       "Case-insensitive contains",
+			expression: `contains(lower(fields.name), "john")`,
+			fields:     fields,
+			want:       true,
+		},
+		{
+			name:       "Negative contains check",
+			expression: `!contains(fields.name, "Smith")`,
+			fields:     fields,
+			want:       true,
+		},
+		{
+			name:       "Multiple string functions",
+			expression: `contains(lower(fields.name), "john") && !contains(fields.name, "Smith")`,
+			fields:     fields,
+			want:       true,
+		},
+		{
+			name:       "String length check",
+			expression: `len(trim(fields.name)) == 8`,
+			fields:     fields,
+			want:       true,
+		},
+		{
+			name:       "Case conversion check",
+			expression: `upper(fields.name) == "JOHN DOE"`,
+			fields:     fields,
+			want:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evaluateExpression(tt.expression, tt.fields)
+			assert.Equal(t, tt.want, got, "Expression evaluation failed for: %s", tt.name)
+		})
+	}
+}
+
+func TestSubmittedDateRule(t *testing.T) {
+	baseTime := time.Date(2025, 3, 7, 12, 0, 0, 0, time.UTC)
+	fields := map[string]interface{}{
+		"created_on":     baseTime,
+		"submitted_date": baseTime, // Same as created_on, should be adjusted
+	}
+
+	tests := []struct {
+		name           string
+		rules          []Rule
+		initialFields  map[string]interface{}
+		expectedFields map[string]interface{}
+	}{
+		{
+			name: "Submitted date adjustment",
+			rules: []Rule{
+				{
+					When: "fields.submitted_date <= fields.created_on",
+					Then: map[string]string{
+						"submitted_date": "${addDuration(fields.created_on, '2h')}",
+					},
+				},
+			},
+			initialFields: fields,
+			expectedFields: map[string]interface{}{
+				"created_on":     baseTime,
+				"submitted_date": baseTime.Add(2 * time.Hour),
+			},
+		},
+		{
+			name: "Submitted date already after created_on",
+			rules: []Rule{
+				{
+					When: "fields.submitted_date <= fields.created_on",
+					Then: map[string]string{
+						"submitted_date": "${addDuration(fields.created_on, '2h')}",
+					},
+				},
+			},
+			initialFields: map[string]interface{}{
+				"created_on":     baseTime,
+				"submitted_date": baseTime.Add(3 * time.Hour), // Already 3 hours after
+			},
+			expectedFields: map[string]interface{}{
+				"created_on":     baseTime,
+				"submitted_date": baseTime.Add(3 * time.Hour), // Should remain unchanged
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a copy of initial fields
+			testFields := make(map[string]interface{})
+			for k, v := range tt.initialFields {
+				testFields[k] = v
+			}
+
+			// Apply rules
+			applyRules(tt.rules, testFields)
+
+			// Check results
+			for key, expectedValue := range tt.expectedFields {
+				assert.Equal(t, expectedValue, testFields[key], "Field %s has unexpected value", key)
+			}
+		})
+	}
+}
