@@ -16,9 +16,6 @@ tables:
   - name: modified_on
     type: timestamp
     format: "2025-03-07 12:00:00"
-    range:
-      min: "2025-03-07 12:00:00"
-      max: "2025-03-07 12:00:00"
   - name: modified_by
     type: string
     value: ["John Doe", "Jane Doe"]
@@ -29,26 +26,72 @@ tables:
     range:
       min: 1
       max: 1000
+  - name: status
+    type: string
+    value: ["PENDING", "IN_PROGRESS", "COMPLETED", "REJECTED"]
+  - name: priority
+    type: string
+    value: ["LOW", "MEDIUM", "HIGH"]
+  - name: completed_on
+    type: timestamp
+    format: "2025-03-07 12:00:00"
   - name: metadata
     type: json
     json_config:
-      min_keys: 2
-      max_keys: 5
-      fields: ["name", "age", "email"]
-      types: ["string", "int", "email"]
-  name: salary
-  type: decimal
-  precision: 2
-  range:
-    min: 1000
-    max: 100000
+    - name: name
+      type: string
+    - name: age
+      type: int
+      range:
+        min: 18
+        max: 65
+    - name: email
+      type: email
+  - name: salary
+    type: decimal
+    range:
+      min: 1000
+      max: 100000
+  rules:
+  # Set modified_on to 1 hour after created_on
+  - when: "true"
+    then:
+      modified_on: "${addDuration(fields.created_on, '1h')}"
+  
+  # Set priority based on salary
+  - when: "fields.salary > 50000"
+    then:
+      priority: "HIGH"
+    otherwise:
+      priority: "${fields.salary > 25000 ? 'MEDIUM' : 'LOW'}"
+  
+  # Set completed_on based on status
+  - when: 'fields.status == "COMPLETED"'
+    then:
+      completed_on: "${addDuration(fields.modified_on, '2h')}"
+  
+  # Add validation rules for rejected applications
+  - when: 'fields.status == "REJECTED"'
+    then:
+      completed_on: "${addDuration(fields.modified_on, '30m')}"
+      priority: "LOW"
+  
+  # Complex time arithmetic for in-progress applications
+  - when: 'fields.status == "IN_PROGRESS" && fields.priority == "HIGH"'
+    then:
+      completed_on: "${addDuration(fields.modified_on, '1h')}"
+      modified_by: "John Doe"
+    otherwise:
+      completed_on: "${addDuration(fields.modified_on, '2h')}"
+      modified_by: "Jane Doe"
+
 - name: "application_status"
   depends_on: "application"
   columns:
   - name: id
     type: uuid
   - name: application_id
-    references: "application.application_id"
+    foreign: "application.application_id"
   - name: reason
     type: sentence
   - name: status
