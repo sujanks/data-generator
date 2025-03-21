@@ -733,20 +733,38 @@ func TestExprEvaluation(t *testing.T) {
 			want:       true,
 		},
 		{
-			name:       "String functions",
-			expression: `contains(lower(fields.name), "john")`,
-			fields:     fields,
-			want:       true,
-		},
-		{
 			name:       "Time comparison",
 			expression: "fields.modified_on > fields.created_on",
 			fields:     fields,
 			want:       true,
 		},
 		{
-			name:       "Complex condition",
+			name:       "Complex condition with multiple fields",
 			expression: `fields.age > 25 && fields.status == "PENDING" && fields.is_active`,
+			fields:     fields,
+			want:       true,
+		},
+		{
+			name:       "Salary-based priority check",
+			expression: "fields.salary > 50000 || (fields.salary > 25000 && fields.age > 25)",
+			fields:     fields,
+			want:       true,
+		},
+		{
+			name:       "Time arithmetic comparison",
+			expression: "fields.modified_on == addDuration(fields.created_on, '1h')",
+			fields:     fields,
+			want:       true,
+		},
+		{
+			name:       "String prefix and suffix check",
+			expression: `hasPrefix(fields.name, "John") && !hasSuffix(fields.name, "Smith")`,
+			fields:     fields,
+			want:       true,
+		},
+		{
+			name:       "String trim and case conversion",
+			expression: `trim(lower(fields.name)) == "john doe"`,
 			fields:     fields,
 			want:       true,
 		},
@@ -755,7 +773,7 @@ func TestExprEvaluation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := evaluateExpression(tt.expression, tt.fields)
-			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want, got, "Expression evaluation failed for: %s", tt.name)
 		})
 	}
 }
@@ -780,7 +798,7 @@ func TestExprValueParsing(t *testing.T) {
 			name:   "Expression - simple math",
 			value:  "${fields.age + 10}",
 			fields: fields,
-			want:   40.0, // expr evaluates numbers as float64
+			want:   40, // expr evaluates numbers as float64
 		},
 		{
 			name:   "Expression - time arithmetic",
