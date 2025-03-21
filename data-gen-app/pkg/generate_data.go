@@ -5,10 +5,12 @@ import (
 	"log"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/brianvoe/gofakeit/v7"
+	"github.com/expr-lang/expr"
 	"github.com/sujanks/data-gen-app/pkg/sink"
 	"gopkg.in/yaml.v3"
 )
@@ -22,6 +24,7 @@ type Table struct {
 	Priority  int      `yaml:"priority"`
 	DependsOn string   `yaml:"depends_on,omitempty"`
 	Columns   []Column `yaml:"columns"`
+	Rules     []Rule   `yaml:"rules,omitempty"`
 }
 
 // Validation defines validation rules for a column
@@ -45,6 +48,14 @@ type FieldConfig struct {
 // JSONConfig is now just an array of field configurations
 type JSONConfig []FieldConfig
 
+// Rule defines a conditional rule with an expression and actions
+type Rule struct {
+	When      string            `yaml:"when"`      // Expression to evaluate
+	Then      map[string]string `yaml:"then"`      // Field values to set when expression is true
+	Otherwise map[string]string `yaml:"otherwise"` // Field values to set when expression is false
+}
+
+// Column defines a column in a table
 type Column struct {
 	Name       string     `yaml:"name"`
 	Pattern    string     `yaml:"pattern,omitempty"`
@@ -57,6 +68,7 @@ type Column struct {
 	Validation Validation `yaml:"validation,omitempty"`
 	Range      Range      `yaml:"range,omitempty"`
 	JSONConfig JSONConfig `yaml:"json_config,omitempty"`
+	Rules      []Rule     `yaml:"rules,omitempty"` // Rules to apply on the column
 }
 
 const hashtag = '#'
@@ -69,6 +81,8 @@ func GenerateData(ds sink.DataSink, count int, profile string) {
 	for _, table := range sortedTables {
 		for i := 0; i < count; i++ {
 			var tableData = make(map[string]interface{})
+
+			// First pass: generate all basic values
 			for _, col := range table.Columns {
 				var colValue interface{}
 				if !col.Mandatory {
@@ -83,12 +97,27 @@ func GenerateData(ds sink.DataSink, count int, profile string) {
 					}
 				}
 				tableData[col.Name] = colValue
+			}
 
-				if col.Parent {
-					keyName := fmt.Sprintf("%s.%s", table.Name, col.Name)
-					parentKeyValues[keyName] = append(parentKeyValues[keyName], fmt.Sprint(colValue))
+			// Second pass: apply rules
+			for _, col := range table.Columns {
+				if len(col.Rules) > 0 {
+					applyRules(col.Rules, tableData)
 				}
 			}
+
+			if table.Rules != nil {
+				applyRules(table.Rules, tableData)
+			}
+
+			// Store parent values for foreign key references
+			for _, col := range table.Columns {
+				if col.Parent {
+					keyName := fmt.Sprintf("%s.%s", table.Name, col.Name)
+					parentKeyValues[keyName] = append(parentKeyValues[keyName], fmt.Sprint(tableData[col.Name]))
+				}
+			}
+
 			ds.InsertRecord(table.Name, tableData)
 		}
 	}
@@ -321,4 +350,185 @@ func sortTablesByDependency(tables []Table) []Table {
 	})
 
 	return sorted
+}
+
+// evaluateExpression evaluates an expression against field values using expr library
+func evaluateExpression(expression string, fields map[string]interface{}) bool {
+	// Add helper functions to the environment
+	env := map[string]interface{}{
+		"fields": fields,
+		// Time helper functions
+		"now":         time.Now,
+		"parseTime":   func(layout, value string) time.Time { t, _ := time.Parse(layout, value); return t },
+		"addDuration": func(t time.Time, d string) time.Time { dur, _ := time.ParseDuration(d); return t.Add(dur) },
+		"format":      func(t time.Time, layout string) string { return t.Format(layout) },
+		// Math helper functions
+		"min": func(a, b float64) float64 {
+			if a < b {
+				return a
+			}
+			return b
+		},
+		"max": func(a, b float64) float64 {
+			if a > b {
+				return a
+			}
+			return b
+		},
+		// String helper functions
+		"contains":  strings.Contains,
+		"hasPrefix": strings.HasPrefix,
+		"hasSuffix": strings.HasPrefix,
+		"lower":     strings.ToLower,
+		"upper":     strings.ToUpper,
+		"trim":      strings.TrimSpace,
+	}
+
+	// Create options for the expression
+	options := []expr.Option{
+		expr.Env(env),
+		expr.AllowUndefinedVariables(),
+	}
+
+	// Compile the expression
+	program, err := expr.Compile(expression, options...)
+	if err != nil {
+		log.Printf("Error compiling expression: %v", err)
+		return false
+	}
+
+	// Run the expression
+	output, err := expr.Run(program, env)
+	if err != nil {
+		log.Printf("Error running expression: %v", err)
+		return false
+	}
+
+	// Convert output to boolean
+	result, ok := output.(bool)
+	if !ok {
+		log.Printf("Expression did not evaluate to boolean: %v", output)
+		return false
+	}
+
+	return result
+}
+
+// parseValue converts string value to appropriate type using expr
+func parseValue(value string, fields map[string]interface{}) interface{} {
+	// If the value contains an expression (indicated by ${...})
+	if strings.Contains(value, "${") && strings.Contains(value, "}") {
+		// Extract the expression
+		expression := strings.TrimPrefix(strings.TrimSuffix(value, "}"), "${")
+
+		// Add helper functions to the environment
+		env := map[string]interface{}{
+			"fields": fields,
+			// Time helper functions
+			"now":         time.Now,
+			"parseTime":   func(layout, value string) time.Time { t, _ := time.Parse(layout, value); return t },
+			"addDuration": func(t time.Time, d string) time.Time { dur, _ := time.ParseDuration(d); return t.Add(dur) },
+			"format":      func(t time.Time, layout string) string { return t.Format(layout) },
+			// Math helper functions
+			"min": func(a, b float64) float64 {
+				if a < b {
+					return a
+				}
+				return b
+			},
+			"max": func(a, b float64) float64 {
+				if a > b {
+					return a
+				}
+				return b
+			},
+			// String helper functions
+			"contains":  strings.Contains,
+			"hasPrefix": strings.HasPrefix,
+			"hasSuffix": strings.HasPrefix,
+			"lower":     strings.ToLower,
+			"upper":     strings.ToUpper,
+			"trim":      strings.TrimSpace,
+		}
+
+		// Create options for the expression
+		options := []expr.Option{
+			expr.Env(env),
+			expr.AllowUndefinedVariables(),
+		}
+
+		// Compile and run the expression
+		program, err := expr.Compile(expression, options...)
+		if err != nil {
+			log.Printf("Error compiling value expression: %v", err)
+			return value
+		}
+
+		output, err := expr.Run(program, env)
+		if err != nil {
+			log.Printf("Error running value expression: %v", err)
+			return value
+		}
+
+		return output
+	}
+
+	// Handle simple time arithmetic expressions like "fieldname + 1h"
+	if strings.Contains(value, " + ") {
+		parts := strings.Split(value, " + ")
+		if len(parts) == 2 {
+			baseField := strings.TrimSpace(parts[0])
+			if baseValue, exists := fields[baseField]; exists {
+				if baseTime, ok := baseValue.(time.Time); ok {
+					duration := strings.TrimSpace(parts[1])
+					if parsedDuration, err := time.ParseDuration(duration); err == nil {
+						return baseTime.Add(parsedDuration)
+					}
+				}
+			}
+		}
+	}
+
+	// Try to parse as timestamp
+	layouts := []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t
+		}
+	}
+
+	// Try to parse as int
+	if i, err := strconv.Atoi(value); err == nil {
+		return i
+	}
+	// Try to parse as float
+	if f, err := strconv.ParseFloat(value, 64); err == nil {
+		return f
+	}
+	// Try to parse as bool
+	if b, err := strconv.ParseBool(value); err == nil {
+		return b
+	}
+	// Return as string if no other type matches
+	return value
+}
+
+// applyRules applies the rules to the generated data
+func applyRules(rules []Rule, fields map[string]interface{}) {
+	for _, rule := range rules {
+		if evaluateExpression(rule.When, fields) {
+			// Apply 'then' values
+			for field, value := range rule.Then {
+				fields[field] = parseValue(value, fields)
+			}
+		} else if rule.Otherwise != nil {
+			// Apply 'otherwise' values
+			for field, value := range rule.Otherwise {
+				fields[field] = parseValue(value, fields)
+			}
+		}
+	}
 }

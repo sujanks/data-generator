@@ -4,6 +4,7 @@ go 1.23.0
 
 require (
 	github.com/brianvoe/gofakeit/v7 v7.1.2
+	github.com/expr-lang/expr v1.17.1
 	github.com/go-pg/pg/v10 v10.13.0
 	github.com/stretchr/testify v1.10.0
 	gopkg.in/yaml.v3 v3.0.1
