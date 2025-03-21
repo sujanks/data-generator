@@ -6,7 +6,13 @@ tables:
     pattern: "ABC#####"
     parent: true
     validation:
-      unique: true  
+      unique: true 
+  - name: created_on
+    type: timestamp
+    format: "2025-03-07 12:00:00"
+    range:
+      min: "2025-03-07 12:00:00"
+      max: "2025-03-07 12:00:00"
   - name: modified_on
     type: timestamp
     format: "2025-03-07 12:00:00"
