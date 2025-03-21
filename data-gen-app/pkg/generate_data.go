@@ -35,13 +35,15 @@ type Range struct {
 	Max interface{} `yaml:"max,omitempty"`
 }
 
-// JSONConfig defines the structure for JSON field generation
-type JSONConfig struct {
-	MinKeys int      `yaml:"min_keys,omitempty"`
-	MaxKeys int      `yaml:"max_keys,omitempty"`
-	Fields  []string `yaml:"fields,omitempty"` // Optional predefined fields
-	Types   []string `yaml:"types,omitempty"`  // Optional value types for fields
+// FieldConfig defines configuration for a specific JSON field
+type FieldConfig struct {
+	Name  string `yaml:"name"`
+	Type  string `yaml:"type"`
+	Range Range  `yaml:"range,omitempty"`
 }
+
+// JSONConfig is now just an array of field configurations
+type JSONConfig []FieldConfig
 
 type Column struct {
 	Name       string     `yaml:"name"`
@@ -180,40 +182,21 @@ func generateColumnValue(col Column) interface{} {
 
 // generateJSON generates a random JSON object based on configuration
 func generateJSON(config JSONConfig) interface{} {
-	// Set defaults if not configured
-	minKeys := 1
-	maxKeys := 5
-	if config.MinKeys > 0 {
-		minKeys = config.MinKeys
-	}
-	if config.MaxKeys > 0 {
-		maxKeys = config.MaxKeys
-	}
-
-	// Generate number of keys
-	numKeys := gofakeit.IntRange(minKeys, maxKeys)
-
 	// Create JSON object
 	jsonObj := make(map[string]interface{})
 
-	// Use predefined fields if available
-	if len(config.Fields) > 0 {
-		for i := 0; i < numKeys && i < len(config.Fields); i++ {
-			field := config.Fields[i]
-			var valueType string
-			if i < len(config.Types) {
-				valueType = config.Types[i]
-			} else {
-				valueType = getRandomValueType()
-			}
-			jsonObj[field] = generateValueByType(valueType)
+	// Use configured fields
+	if len(config) > 0 {
+		for _, field := range config {
+			jsonObj[field.Name] = generateValueByType(field.Type, field.Range)
 		}
 	} else {
-		// Generate random fields
+		// Generate a random number of fields if no configuration provided
+		numKeys := gofakeit.IntRange(1, 5)
 		for i := 0; i < numKeys; i++ {
 			field := gofakeit.Word()
 			valueType := getRandomValueType()
-			jsonObj[field] = generateValueByType(valueType)
+			jsonObj[field] = generateValueByType(valueType, Range{})
 		}
 	}
 
@@ -227,14 +210,36 @@ func getRandomValueType() string {
 }
 
 // generateValueByType generates a random value of specified type
-func generateValueByType(valueType string) interface{} {
+func generateValueByType(valueType string, rangeConfig Range) interface{} {
 	switch valueType {
 	case "string":
 		return gofakeit.Word()
 	case "int":
-		return gofakeit.IntRange(0, 1000)
+		min, max := 0, 1000
+		if rangeConfig.Min != nil {
+			if minVal, ok := rangeConfig.Min.(int); ok {
+				min = minVal
+			}
+		}
+		if rangeConfig.Max != nil {
+			if maxVal, ok := rangeConfig.Max.(int); ok {
+				max = maxVal
+			}
+		}
+		return gofakeit.IntRange(min, max)
 	case "float":
-		return gofakeit.Float64Range(0, 1000)
+		min, max := 0.0, 1000.0
+		if rangeConfig.Min != nil {
+			if minVal, ok := rangeConfig.Min.(float64); ok {
+				min = minVal
+			}
+		}
+		if rangeConfig.Max != nil {
+			if maxVal, ok := rangeConfig.Max.(float64); ok {
+				max = maxVal
+			}
+		}
+		return gofakeit.Float64Range(min, max)
 	case "bool":
 		return gofakeit.Bool()
 	case "date":
