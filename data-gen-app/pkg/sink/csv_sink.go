@@ -4,9 +4,11 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+
+	"github.com/sujanks/data-gen-app/pkg/types"
 )
 
 // CSVSink implements DataSink interface for CSV file output
@@ -15,13 +17,23 @@ type CSVSink struct {
 	writers   map[string]*csv.Writer
 	files     map[string]*os.File
 	headers   map[string][]string
+	mu        sync.Mutex
+	schema    *types.Schema
+	tableMap  map[string]*types.Table // Cache for quick table lookup
 }
 
 // NewCSVSink creates a new CSV sink that writes to the specified directory
-func NewCSVSink(outputDir string) (*CSVSink, error) {
+func NewCSVSink(outputDir string, schema *types.Schema) (*CSVSink, error) {
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %v", err)
+	}
+
+	// Create a map for quick table lookup
+	tableMap := make(map[string]*types.Table)
+	for i := range schema.Tables {
+		table := &schema.Tables[i]
+		tableMap[table.Name] = table
 	}
 
 	return &CSVSink{
@@ -29,54 +41,49 @@ func NewCSVSink(outputDir string) (*CSVSink, error) {
 		writers:   make(map[string]*csv.Writer),
 		files:     make(map[string]*os.File),
 		headers:   make(map[string][]string),
+		schema:    schema,
+		tableMap:  tableMap,
 	}, nil
 }
 
 // InsertRecord writes a record to the appropriate CSV file
-func (s *CSVSink) InsertRecord(tableName string, data map[string]interface{}) error {
-	// Initialize writer if not exists
-	if _, exists := s.writers[tableName]; !exists {
-		// Create file
-		filename := filepath.Join(s.outputDir, tableName+".csv")
-		file, err := os.Create(filename)
-		if err != nil {
-			return fmt.Errorf("failed to create CSV file for table %s: %v", tableName, err)
-		}
-		s.files[tableName] = file
+func (s *CSVSink) InsertRecord(tableName string, record map[string]interface{}) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-		// Create writer
+	// Get table from the map
+	table, exists := s.tableMap[tableName]
+	if !exists {
+		return fmt.Errorf("table not found: %s", tableName)
+	}
+
+	if s.writers[tableName] == nil {
+		file, err := os.Create(fmt.Sprintf("%s/%s.csv", s.outputDir, tableName))
+		if err != nil {
+			return err
+		}
 		writer := csv.NewWriter(file)
 		s.writers[tableName] = writer
+		s.files[tableName] = file
 
-		// Extract and sort headers
-		var headers []string
-		for k := range data {
-			headers = append(headers, k)
+		// Write header
+		var header []string
+		for _, col := range table.Columns {
+			header = append(header, col.Name)
 		}
-		sort.Strings(headers)
-		s.headers[tableName] = headers
-
-		// Write headers
-		if err := writer.Write(headers); err != nil {
-			return fmt.Errorf("failed to write headers for table %s: %v", tableName, err)
+		if err := writer.Write(header); err != nil {
+			return err
 		}
 	}
 
-	// Convert data to string slice in header order
-	var record []string
-	for _, header := range s.headers[tableName] {
-		value := data[header]
-		record = append(record, formatValue(value))
+	// Write record in the same order as columns
+	var values []string
+	for _, col := range table.Columns {
+		value := record[col.Name]
+		values = append(values, formatValue(value))
 	}
 
-	// Write record
-	if err := s.writers[tableName].Write(record); err != nil {
-		return fmt.Errorf("failed to write record for table %s: %v", tableName, err)
-	}
-
-	// Flush after each write to ensure data is written to disk
-	s.writers[tableName].Flush()
-	return s.writers[tableName].Error()
+	return s.writers[tableName].Write(values)
 }
 
 // Close closes all open files
@@ -112,18 +119,25 @@ func formatValue(value interface{}) string {
 	switch v := value.(type) {
 	case string:
 		return v
-	case int, int32, int64:
+	case int:
 		return fmt.Sprintf("%d", v)
-	case float32, float64:
+	case float64:
 		return fmt.Sprintf("%.2f", v)
 	case bool:
-		return fmt.Sprintf("%t", v)
-	case map[string]interface{}: // For JSON fields
-		jsonStr, err := JSONToString(v)
-		if err != nil {
-			return fmt.Sprintf("error: %v", err)
+		return fmt.Sprintf("%v", v)
+	case map[string]interface{}:
+		// Sort keys for consistent output
+		var keys []string
+		for k := range v {
+			keys = append(keys, k)
 		}
-		return jsonStr
+		sort.Strings(keys)
+
+		var pairs []string
+		for _, k := range keys {
+			pairs = append(pairs, fmt.Sprintf("%s:%v", k, v[k]))
+		}
+		return fmt.Sprintf("{%s}", strings.Join(pairs, ","))
 	default:
 		return fmt.Sprintf("%v", v)
 	}

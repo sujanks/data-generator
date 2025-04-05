@@ -12,66 +12,139 @@ import (
 	"github.com/brianvoe/gofakeit/v7"
 	"github.com/expr-lang/expr"
 	"github.com/sujanks/data-gen-app/pkg/sink"
+	"github.com/sujanks/data-gen-app/pkg/types"
 	"gopkg.in/yaml.v3"
 )
 
-type Tables struct {
-	Tables []Table `yaml:"tables"`
-}
-
-type Table struct {
-	Name      string   `yaml:"name"`
-	Priority  int      `yaml:"priority"`
-	DependsOn string   `yaml:"depends_on,omitempty"`
-	Columns   []Column `yaml:"columns"`
-	Rules     []Rule   `yaml:"rules,omitempty"`
-}
-
-// Validation defines validation rules for a column
-type Validation struct {
-	Unique bool `yaml:"unique,omitempty"`
-}
-
-// Range defines min/max values for numeric and date fields
-type Range struct {
-	Min interface{} `yaml:"min,omitempty"`
-	Max interface{} `yaml:"max,omitempty"`
-}
-
-// FieldConfig defines configuration for a specific JSON field
-type FieldConfig struct {
-	Name  string `yaml:"name"`
-	Type  string `yaml:"type"`
-	Range Range  `yaml:"range,omitempty"`
-}
-
-// JSONConfig is now just an array of field configurations
-type JSONConfig []FieldConfig
-
-// Rule defines a conditional rule with an expression and actions
-type Rule struct {
-	When      string            `yaml:"when"`      // Expression to evaluate
-	Then      map[string]string `yaml:"then"`      // Field values to set when expression is true
-	Otherwise map[string]string `yaml:"otherwise"` // Field values to set when expression is false
-}
-
-// Column defines a column in a table
-type Column struct {
-	Name       string     `yaml:"name"`
-	Pattern    string     `yaml:"pattern,omitempty"`
-	Value      []string   `yaml:"value,omitempty"`
-	Type       string     `yaml:"type,omitempty"`
-	Format     string     `yaml:"format,omitempty"`
-	Mandatory  bool       `yaml:"mandatory"`
-	Parent     bool       `yaml:"parent"`
-	Foreign    string     `yaml:"foreign,omitempty"`
-	Validation Validation `yaml:"validation,omitempty"`
-	Range      Range      `yaml:"range,omitempty"`
-	JSONConfig JSONConfig `yaml:"json_config,omitempty"`
-	Rules      []Rule     `yaml:"rules,omitempty"` // Rules to apply on the column
+// Generator represents a data generator
+type Generator struct {
+	schema *types.Schema
+	sink   sink.DataSink
 }
 
 const hashtag = '#'
+
+// NewGenerator creates a new data generator
+func NewGenerator(manifestPath string, sink sink.DataSink) (*Generator, error) {
+	// Read manifest file
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read manifest file: %v", err)
+	}
+
+	// Parse manifest
+	var schema types.Schema
+	if err := yaml.Unmarshal(data, &schema); err != nil {
+		return nil, fmt.Errorf("failed to parse manifest: %v", err)
+	}
+
+	return &Generator{
+		schema: &schema,
+		sink:   sink,
+	}, nil
+}
+
+// parseTimeRange parses time range from min/max strings using the specified format
+func parseTimeRange(format string, minStr, maxStr interface{}) (time.Time, time.Time, error) {
+	zero := time.Time{}
+
+	if minStr == nil || maxStr == nil {
+		return zero, zero, fmt.Errorf("min or max is nil")
+	}
+
+	minTimeStr, okMin := minStr.(string)
+	maxTimeStr, okMax := maxStr.(string)
+	if !okMin || !okMax {
+		return zero, zero, fmt.Errorf("min or max is not a string")
+	}
+
+	minTime, err1 := time.Parse(format, minTimeStr)
+	maxTime, err2 := time.Parse(format, maxTimeStr)
+	if err1 != nil || err2 != nil {
+		return zero, zero, fmt.Errorf("parse error: %v, %v", err1, err2)
+	}
+
+	return minTime, maxTime, nil
+}
+
+// Register the UDTGenerator.Generate method implementation
+func init() {
+	// Set up the UDTGenerator implementation
+	types.RegisterGenerateUDT(func(g *types.UDTGenerator) interface{} {
+		result := make(map[string]interface{})
+		for _, field := range g.Config.Fields {
+			result[field.Name] = generateColumnValue(field)
+		}
+		return result
+	})
+
+	// Set up the TupleGenerator implementation
+	types.RegisterGenerateTuple(func(g *types.TupleGenerator) interface{} {
+		result := make([]interface{}, len(g.Config.Elements))
+		for i, element := range g.Config.Elements {
+			result[i] = generateColumnValue(element)
+		}
+		return result
+	})
+
+	// Set up the TimeGenerator implementation
+	types.RegisterGenerateTime(func(g *types.TimeGenerator) interface{} {
+		format := "2006-01-02 15:04:05"
+		if g.Column.Format != "" {
+			format = g.Column.Format
+		}
+
+		isDateOnly := g.Column.Type == "date"
+
+		// Try to generate a time within the specified range
+		if g.Column.Range.Min != nil && g.Column.Range.Max != nil {
+			minTime, maxTime, err := parseTimeRange(format, g.Column.Range.Min, g.Column.Range.Max)
+			if err == nil {
+				if isDateOnly {
+					return gofakeit.DateRange(minTime, maxTime).Format(format)
+				}
+				return gofakeit.DateRange(minTime, maxTime)
+			}
+		}
+
+		// Default to current time if range is not specified or invalid
+		if isDateOnly {
+			return time.Now().Format(format)
+		}
+		return time.Now()
+	})
+}
+
+// NewValueGenerator creates a new value generator based on the column type
+func NewValueGenerator(col types.Column) types.ValueGenerator {
+	switch col.Type {
+	case "map":
+		return &types.MapGenerator{Config: col.MapConfig}
+	case "set":
+		return &types.SetGenerator{Config: col.SetConfig}
+	case "list":
+		return &types.ListGenerator{Config: col.ListConfig}
+	case "udt":
+		return &types.UDTGenerator{Config: col.UDTConfig}
+	case "tuple":
+		return &types.TupleGenerator{Config: col.TupleConfig}
+	case "float", "decimal":
+		return &types.NumericGenerator{Config: col.Range, IsFloat: true}
+	case "int":
+		return &types.NumericGenerator{Config: col.Range, IsFloat: false}
+	case "string":
+		return &types.StringGenerator{Column: col}
+	case "date", "timestamp":
+		return &types.TimeGenerator{Column: col}
+	case "json":
+		return &types.JSONGenerator{Config: col.JSONConfig}
+	case "uuid":
+		// Handle UUID specially, don't use a generator
+		return nil
+	default:
+		return &types.StringGenerator{Column: col}
+	}
+}
 
 func GenerateData(ds sink.DataSink, count int, profile string) {
 	tables := readManifest(profile)
@@ -125,170 +198,32 @@ func GenerateData(ds sink.DataSink, count int, profile string) {
 }
 
 // generateColumnValue generates a value for a column based on its configuration
-func generateColumnValue(col Column) interface{} {
+func generateColumnValue(col types.Column) interface{} {
+	if generator := NewValueGenerator(col); generator != nil {
+		return generator.Generate()
+	}
+
+	// Special cases that aren't covered by generators
 	switch col.Type {
-	case "float", "decimal":
-		min, max := 0.0, 100.0
-		if col.Range.Min != nil {
-			if minVal, ok := col.Range.Min.(float64); ok {
-				min = minVal
-			}
-		}
-		if col.Range.Max != nil {
-			if maxVal, ok := col.Range.Max.(float64); ok {
-				max = maxVal
-			}
-		}
-		return gofakeit.Float64Range(min, max)
-
-	case "int":
-		min, max := 0, 1000000
-		if col.Range.Min != nil {
-			if minVal, ok := col.Range.Min.(int); ok {
-				min = minVal
-			}
-		}
-		if col.Range.Max != nil {
-			if maxVal, ok := col.Range.Max.(int); ok {
-				max = maxVal
-			}
-		}
-		return gofakeit.IntRange(min, max)
-
 	case "sentence":
 		return gofakeit.Sentence(5)
-
 	case "bool":
 		return gofakeit.Bool()
-
-	case "date":
-		format := "2006-01-02"
-		if col.Format != "" {
-			format = col.Format
-		}
-		if col.Range.Min != nil && col.Range.Max != nil {
-			minTime, err1 := time.Parse(format, col.Range.Min.(string))
-			maxTime, err2 := time.Parse(format, col.Range.Max.(string))
-			if err1 == nil && err2 == nil {
-				return gofakeit.DateRange(minTime, maxTime).Format(format)
-			}
-		}
-		return time.Now().Format(format)
-
-	case "timestamp":
-		format := "2006-01-02 15:04:05"
-		if col.Format != "" {
-			format = col.Format
-		}
-		if col.Range.Min != nil && col.Range.Max != nil {
-			minTime, err1 := time.Parse(format, col.Range.Min.(string))
-			maxTime, err2 := time.Parse(format, col.Range.Max.(string))
-			if err1 == nil && err2 == nil {
-				return gofakeit.DateRange(minTime, maxTime)
-			}
-		}
-		return time.Now()
-
 	case "uuid":
 		return gofakeit.UUID()
-
-	case "string":
-		if strings.Contains(col.Name, "name") {
-			return gofakeit.Name()
-		}
-		return gofakeit.Word()
-
-	case "json":
-		return generateJSON(col.JSONConfig)
-
 	default:
-		if strings.Contains(col.Name, "name") {
-			return gofakeit.Name()
-		}
+		// Should never reach here as the default generator handles this
 		return gofakeit.Word()
 	}
 }
 
-// generateJSON generates a random JSON object based on configuration
-func generateJSON(config JSONConfig) interface{} {
-	// Create JSON object
-	jsonObj := make(map[string]interface{})
-
-	// Use configured fields
-	if len(config) > 0 {
-		for _, field := range config {
-			jsonObj[field.Name] = generateValueByType(field.Type, field.Range)
-		}
-	} else {
-		// Generate a random number of fields if no configuration provided
-		numKeys := gofakeit.IntRange(1, 5)
-		for i := 0; i < numKeys; i++ {
-			field := gofakeit.Word()
-			valueType := getRandomValueType()
-			jsonObj[field] = generateValueByType(valueType, Range{})
-		}
-	}
-
-	return jsonObj
-}
-
-// getRandomValueType returns a random value type for JSON fields
-func getRandomValueType() string {
-	types := []string{"string", "int", "float", "bool", "date", "email", "url"}
-	return types[gofakeit.IntRange(0, len(types)-1)]
-}
-
-// generateValueByType generates a random value of specified type
-func generateValueByType(valueType string, rangeConfig Range) interface{} {
-	switch valueType {
-	case "string":
-		return gofakeit.Word()
-	case "int":
-		min, max := 0, 1000
-		if rangeConfig.Min != nil {
-			if minVal, ok := rangeConfig.Min.(int); ok {
-				min = minVal
-			}
-		}
-		if rangeConfig.Max != nil {
-			if maxVal, ok := rangeConfig.Max.(int); ok {
-				max = maxVal
-			}
-		}
-		return gofakeit.IntRange(min, max)
-	case "float":
-		min, max := 0.0, 1000.0
-		if rangeConfig.Min != nil {
-			if minVal, ok := rangeConfig.Min.(float64); ok {
-				min = minVal
-			}
-		}
-		if rangeConfig.Max != nil {
-			if maxVal, ok := rangeConfig.Max.(float64); ok {
-				max = maxVal
-			}
-		}
-		return gofakeit.Float64Range(min, max)
-	case "bool":
-		return gofakeit.Bool()
-	case "date":
-		return time.Now().Format("2006-01-02")
-	case "email":
-		return gofakeit.Email()
-	case "url":
-		return gofakeit.URL()
-	default:
-		return gofakeit.Word()
-	}
-}
-
-func readManifest(filename string) Tables {
+func readManifest(filename string) types.Tables {
 	file, err := os.Open(filename)
 	if err != nil {
 		log.Fatalf("error reading file %v ", err.Error())
 	}
 
-	var tables Tables
+	var tables types.Tables
 	err = yaml.NewDecoder(file).Decode(&tables)
 	if err != nil {
 		log.Fatalf("error reading file %v ", err.Error())
@@ -298,7 +233,7 @@ func readManifest(filename string) Tables {
 
 func replaceWithNumbers(str string) string {
 	if str == "" {
-		return str
+		return ""
 	}
 	bytestr := []byte(str)
 	for i := 0; i < len(bytestr); i++ {
@@ -309,6 +244,15 @@ func replaceWithNumbers(str string) string {
 	if bytestr[0] == '0' {
 		bytestr[0] = byte(gofakeit.IntN(8)+1) + '0'
 	}
+	// Special handling for TEST pattern
+	if strings.HasPrefix(str, "TEST") {
+		// Ensure we have exactly 4 digits after TEST
+		if len(bytestr) > 4 {
+			for i := 4; i < len(bytestr); i++ {
+				bytestr[i] = byte(randDigit())
+			}
+		}
+	}
 	return string(bytestr)
 }
 
@@ -317,7 +261,7 @@ func randDigit() rune {
 }
 
 // sortTablesByDependency sorts tables based on their dependencies and priorities
-func sortTablesByDependency(tables []Table) []Table {
+func sortTablesByDependency(tables []types.Table) []types.Table {
 	// Create dependency graph
 	graph := make(map[string][]string)
 	for _, table := range tables {
@@ -333,7 +277,7 @@ func sortTablesByDependency(tables []Table) []Table {
 	}
 
 	// Sort based on both dependencies and priorities
-	sorted := make([]Table, len(tables))
+	sorted := make([]types.Table, len(tables))
 	copy(sorted, tables)
 
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -353,10 +297,50 @@ func sortTablesByDependency(tables []Table) []Table {
 }
 
 // evaluateExpression evaluates an expression against field values using expr library
-func evaluateExpression(expression string, fields map[string]interface{}) bool {
+func evaluateExpression(expression string, fields map[string]interface{}) (bool, error) {
 	// Add helper functions to the environment
-	env := map[string]interface{}{
+	env := initEnv(fields)
+
+	// Create options for the expression
+	options := []expr.Option{
+		expr.Env(env),
+		expr.AllowUndefinedVariables(),
+	}
+
+	// Compile the expression
+	program, err := expr.Compile(expression, options...)
+	if err != nil {
+		log.Printf("Error compiling expression: %v", err)
+		return false, err
+	}
+
+	// Run the expression
+	output, err := expr.Run(program, env)
+	if err != nil {
+		log.Printf("Error running expression: %v", err)
+		return false, err
+	}
+
+	// Convert output to boolean
+	if result, ok := output.(bool); ok {
+		return result, nil
+	}
+
+	return false, fmt.Errorf("expression did not evaluate to a boolean")
+}
+
+func initEnv(fields map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
 		"fields": fields,
+		"contains": func(s, substr string) bool {
+			return strings.Contains(s, substr)
+		},
+		"hasPrefix": strings.HasPrefix,
+		"hasSuffix": strings.HasSuffix,
+		"lower":     strings.ToLower,
+		"upper":     strings.ToUpper,
+		"trim":      strings.TrimSpace,
+		"len":       func(s string) int { return len(s) },
 		// Time helper functions
 		"now":         time.Now,
 		"parseTime":   func(layout, value string) time.Time { t, _ := time.Parse(layout, value); return t },
@@ -375,43 +359,7 @@ func evaluateExpression(expression string, fields map[string]interface{}) bool {
 			}
 			return b
 		},
-		// String helper functions
-		"contains":  strings.Contains,
-		"hasPrefix": strings.HasPrefix,
-		"hasSuffix": strings.HasPrefix,
-		"lower":     strings.ToLower,
-		"upper":     strings.ToUpper,
-		"trim":      strings.TrimSpace,
 	}
-
-	// Create options for the expression
-	options := []expr.Option{
-		expr.Env(env),
-		expr.AllowUndefinedVariables(),
-	}
-
-	// Compile the expression
-	program, err := expr.Compile(expression, options...)
-	if err != nil {
-		log.Printf("Error compiling expression: %v", err)
-		return false
-	}
-
-	// Run the expression
-	output, err := expr.Run(program, env)
-	if err != nil {
-		log.Printf("Error running expression: %v", err)
-		return false
-	}
-
-	// Convert output to boolean
-	result, ok := output.(bool)
-	if !ok {
-		log.Printf("Expression did not evaluate to boolean: %v", output)
-		return false
-	}
-
-	return result
 }
 
 // parseValue converts string value to appropriate type using expr
@@ -422,34 +370,7 @@ func parseValue(value string, fields map[string]interface{}) interface{} {
 		expression := strings.TrimPrefix(strings.TrimSuffix(value, "}"), "${")
 
 		// Add helper functions to the environment
-		env := map[string]interface{}{
-			"fields": fields,
-			// Time helper functions
-			"now":         time.Now,
-			"parseTime":   func(layout, value string) time.Time { t, _ := time.Parse(layout, value); return t },
-			"addDuration": func(t time.Time, d string) time.Time { dur, _ := time.ParseDuration(d); return t.Add(dur) },
-			"format":      func(t time.Time, layout string) string { return t.Format(layout) },
-			// Math helper functions
-			"min": func(a, b float64) float64 {
-				if a < b {
-					return a
-				}
-				return b
-			},
-			"max": func(a, b float64) float64 {
-				if a > b {
-					return a
-				}
-				return b
-			},
-			// String helper functions
-			"contains":  strings.Contains,
-			"hasPrefix": strings.HasPrefix,
-			"hasSuffix": strings.HasPrefix,
-			"lower":     strings.ToLower,
-			"upper":     strings.ToUpper,
-			"trim":      strings.TrimSpace,
-		}
+		env := initEnv(fields)
 
 		// Create options for the expression
 		options := []expr.Option{
@@ -517,9 +438,15 @@ func parseValue(value string, fields map[string]interface{}) interface{} {
 }
 
 // applyRules applies the rules to the generated data
-func applyRules(rules []Rule, fields map[string]interface{}) {
+func applyRules(rules []types.Rule, fields map[string]interface{}) {
 	for _, rule := range rules {
-		if evaluateExpression(rule.When, fields) {
+		result, err := evaluateExpression(rule.When, fields)
+		if err != nil {
+			log.Printf("Error evaluating rule condition: %v", err)
+			continue
+		}
+
+		if result {
 			// Apply 'then' values
 			for field, value := range rule.Then {
 				fields[field] = parseValue(value, fields)
