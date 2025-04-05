@@ -1,0 +1,71 @@
+tables:
+- name: application
+  priority: 1
+  columns:
+  - name: application_id
+    pattern: "ABC#####"
+    parent: true
+    validation:
+      unique: true 
+  - name: metadata
+    type: json
+    json_config:
+    - name: name
+      type: string
+    - name: age
+      type: int
+      range:
+        min: 18
+        max: 65
+    - name: email
+      type: email
+  - name: user_preferences
+    type: map
+    key_type: string
+    value_type: string
+    map_config:
+      min_entries: 2
+      max_entries: 5
+      keys: ["theme", "language", "notifications"]
+      values: ["dark", "light", "en", "fr", "on", "off"]
+  - name: tags
+    type: set
+    element_type: string
+    set_config:
+      min_elements: 1
+      max_elements: 3
+      values: ["urgent", "important", "normal", "low"]
+  - name: address
+    type: udt
+    udt_config:
+      name: address_type
+      fields:
+        - name: street
+          type: string
+        - name: city
+          type: string
+        - name: state
+          type: string
+        - name: zip_code
+          type: string
+          pattern: "#####"
+  - name: phone_numbers
+    type: list
+    element_type: string
+    list_config:
+      min_elements: 1
+      max_elements: 3
+      pattern: "+1-###-###-####"
+  - name: coordinates
+    type: tuple
+    tuple_config:
+      elements:
+        - type: decimal
+          range:
+            min: -180.0
+            max: 180.0
+        - type: decimal
+          range:
+            min: -90.0
+            max: 90.0
+  

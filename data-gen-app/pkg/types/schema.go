@@ -153,7 +153,7 @@ func (g *MapGenerator) Generate() interface{} {
 	}
 
 	// Then add random entries until we reach the desired number
-	for len(result) < numEntries {
+	for len(result) < 1 && len(result) < numEntries {
 		key := g.generateKey()
 		value := g.generateValue()
 		result[key.(string)] = value

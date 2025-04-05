@@ -28,6 +28,14 @@ func init() {
 	})
 }
 
+func TestCSVSink(t *testing.T) {
+	os.Setenv("SINK", "csv")
+	os.Setenv("PROFILE", "test")
+	os.Setenv("RECORDS", "10")
+	manifestPath := "../manifest/test.yaml"
+	GenerateData(nil, 1, manifestPath)
+}
+
 func TestGenerateData(t *testing.T) {
 	// Create a temporary manifest file for testing
 	manifestContent := `

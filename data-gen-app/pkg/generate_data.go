@@ -158,18 +158,23 @@ func GenerateData(ds sink.DataSink, count int, profile string) {
 			// First pass: generate all basic values
 			for _, col := range table.Columns {
 				var colValue interface{}
-				if !col.Mandatory {
-					if col.Foreign != "" {
+				if col.Foreign != "" {
+					// Handle foreign key reference
+					if len(parentKeyValues[col.Foreign]) > 0 {
 						colValue = gofakeit.RandomString(parentKeyValues[col.Foreign])
-					} else if len(col.Value) > 0 {
-						colValue = gofakeit.RandomString(col.Value)
-					} else if col.Pattern != "" {
-						colValue = replaceWithNumbers(col.Pattern)
-					} else {
-						colValue = generateColumnValue(col)
 					}
+				} else if len(col.Value) > 0 {
+					colValue = gofakeit.RandomString(col.Value)
+				} else if col.Pattern != "" {
+					colValue = replaceWithNumbers(col.Pattern)
+				} else {
+					colValue = generateColumnValue(col)
 				}
-				tableData[col.Name] = colValue
+
+				// Only add non-nil values to the tableData
+				if colValue != nil || col.Mandatory {
+					tableData[col.Name] = colValue
+				}
 			}
 
 			// Second pass: apply rules
@@ -190,8 +195,8 @@ func GenerateData(ds sink.DataSink, count int, profile string) {
 					parentKeyValues[keyName] = append(parentKeyValues[keyName], fmt.Sprint(tableData[col.Name]))
 				}
 			}
-
-			ds.InsertRecord(table.Name, tableData)
+			fmt.Println(tableData)
+			//ds.InsertRecord(table.Name, tableData)
 		}
 	}
 	log.Printf("%d records inserted", count)
