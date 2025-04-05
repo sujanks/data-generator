@@ -195,8 +195,7 @@ func GenerateData(ds sink.DataSink, count int, profile string) {
 					parentKeyValues[keyName] = append(parentKeyValues[keyName], fmt.Sprint(tableData[col.Name]))
 				}
 			}
-			fmt.Println(tableData)
-			//ds.InsertRecord(table.Name, tableData)
+			ds.InsertRecord(table.Name, tableData)
 		}
 	}
 	log.Printf("%d records inserted", count)
